@@ -184,8 +184,105 @@ public class BiharRoutingEngine {
         System.out.println("-------------------------------------------------------------------------");
         System.out.printf(" SUMMARY PROTOCOL -> Total Distance: %.1f Km | Total Travel Time: %d hr %d mins\n", totalDistance, finalHrs, finalMins);
         System.out.println("=========================================================================");
+
+    }
+// Tracking fields for UI Cards
+    private double lastTotalDistance = 0.0;
+    private double lastTotalTime = 0.0;
+
+    public double getLastTotalDistance() { return lastTotalDistance; }
+    public double getLastTotalTime() { return lastTotalTime; }
+
+    // Array accessor for JComboBox
+    public String[] getRegisteredDistricts() {
+        return registry.values().stream()
+                .map(d -> d.name)
+                .toArray(String[]::new);
     }
 
+    // Returns formatted string output to print inside the UI text pane
+    public String getRouteItinerary(String origin, String destination, boolean optimizeTime) {
+        String normOrigin = origin.toLowerCase().trim();
+        String normDestination = destination.toLowerCase().trim();
+
+        if (!registry.containsKey(normOrigin) || !registry.containsKey(normDestination)) {
+            return "❌ Error: One or both district names were not recognized.";
+        }
+
+        PriorityQueue<PathNode> openSet = new PriorityQueue<>();
+        Map<String, Highway> leadingEdgeMap = new HashMap<>(); 
+        Map<String, Double> costGMap = new HashMap<>();
+
+        for (String key : registry.keySet()) {
+            costGMap.put(key, Double.MAX_VALUE);
+        }
+
+        costGMap.put(normOrigin, 0.0);
+        openSet.add(new PathNode(normOrigin, 0.0, calculateHeuristic(normOrigin, normDestination, optimizeTime)));
+
+        boolean found = false;
+        while (!openSet.isEmpty()) {
+            PathNode currentWrapper = openSet.poll();
+            String current = currentWrapper.districtName;
+
+            if (current.equals(normDestination)) {
+                found = true;
+                break;
+            }
+
+            for (Highway highway : graph.getOrDefault(current, Collections.emptyList())) {
+                String neighbor = highway.targetDistrict.toLowerCase();
+                double edgeCost = optimizeTime ? highway.getTravelTimeHours() : highway.distanceKm;
+                double tentativeGScore = costGMap.get(current) + edgeCost;
+
+                if (tentativeGScore < costGMap.get(neighbor)) {
+                    leadingEdgeMap.put(neighbor, highway);
+                    costGMap.put(neighbor, tentativeGScore);
+                    double scoreF = tentativeGScore + calculateHeuristic(neighbor, normDestination, optimizeTime);
+                    openSet.add(new PathNode(neighbor, tentativeGScore, scoreF));
+                }
+            }
+        }
+
+        if (!found) {
+            return "❌ No viable route could be mapped between these locations.";
+        }
+
+        List<Highway> pathEdges = new ArrayList<>();
+        String current = normDestination;
+        while (leadingEdgeMap.containsKey(current)) {
+            Highway edge = leadingEdgeMap.get(current);
+            pathEdges.add(0, edge);
+            current = edge.sourceDistrict.toLowerCase();
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("OFFICIAL TRANSIT ITINERARY\n");
+        sb.append("Origin: ").append(registry.get(normOrigin).name)
+          .append("  ➔  Destination: ").append(registry.get(normDestination).name).append("\n");
+        sb.append("Mode: ").append(optimizeTime ? "Fastest Travel Time" : "Shortest Physical Distance").append("\n");
+        sb.append("---------------------------------------------------------------------------\n\n");
+
+        this.lastTotalDistance = 0;
+        this.lastTotalTime = 0;
+        int step = 1;
+
+        for (Highway edge : pathEdges) {
+            String fromName = registry.get(edge.sourceDistrict.toLowerCase()).name;
+            String toName = registry.get(edge.targetDistrict.toLowerCase()).name;
+            double hours = edge.getTravelTimeHours();
+            int mins = (int) Math.round((hours - (int)hours) * 60);
+
+            sb.append(String.format("[%d] %s ➔ %s\n", step++, fromName, toName));
+            sb.append(String.format("    Route: %s (%s)\n", edge.highwayName, edge.highwayType));
+            sb.append(String.format("    Segment: %.1f Km | Est: %d hr %d mins\n\n", edge.distanceKm, (int)hours, mins));
+
+            this.lastTotalDistance += edge.distanceKm;
+            this.lastTotalTime += hours;
+        }
+
+        return sb.toString();
+    }
     public static void main(String[] args) {
         BiharRoutingEngine engine = new BiharRoutingEngine();
 
@@ -339,5 +436,10 @@ public class BiharRoutingEngine {
         engine.printDetailedRoute(origin, destination, optimizeTime);
         
         scanner.close();
+    // Launch Desktop Dashboard UI
+        javax.swing.SwingUtilities.invokeLater(() -> {
+            BiharRoutingUI gui = new BiharRoutingUI(engine);
+            gui.setVisible(true);
+        });
     }
 }
