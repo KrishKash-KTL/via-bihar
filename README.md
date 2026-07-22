@@ -23,6 +23,9 @@ The **Bihar Transit Navigator** includes a modern desktop dashboard built using 
 
 ---
 
+[Watch the demo video](./C:\Users\krish\OneDrive\Documents\Video Project.mp4.mp4)
+
+
 ## 🛠️ Execution & Deployment
 
 ### Prerequisites
